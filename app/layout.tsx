@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Synapse — Creative Universe & Tech Network",
-  description: "Ignite ideas, connect the creative universe for designers, software engineers, and next-gen builders.",
+  title: "Gesture Synth — AI Hand Tracking Web Audio Synthesizer",
+  description: "Play polyphonic chords with hand gestures via Webcam using MediaPipe Hands and Tone.js Web Audio API.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
