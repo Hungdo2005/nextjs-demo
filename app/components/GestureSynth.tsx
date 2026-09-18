@@ -14,7 +14,8 @@ import {
   Minimize2,
   RefreshCw,
   Sliders,
-  Play
+  Play,
+  Zap
 } from "lucide-react";
 
 // ==========================================
@@ -36,42 +37,34 @@ export const CHORD_MAP: Record<string, ChordDefinition> = {
     roman: "C (I)",
     notes: ["C4", "E4", "G4"],
     color: "#06b6d4", // Cyan
-    gestureHint: "1 Finger (Index)",
-    fingerPattern: "☝️ 1 Finger",
-  },
-  F: {
-    name: "F",
-    roman: "F (IV)",
-    notes: ["F3", "A3", "C4"],
-    color: "#a855f7", // Purple
-    gestureHint: "4 Fingers (No Thumb)",
-    fingerPattern: "🖖 4 Fingers",
-  },
-  G: {
-    name: "G",
-    roman: "G (V)",
-    notes: ["G3", "B3", "D4"],
-    color: "#eab308", // Golden Yellow
-    gestureHint: "5 Fingers (Open Palm)",
-    fingerPattern: "🖐️ 5 Fingers",
+    gestureHint: "1 ngón trỏ giơ lên",
+    fingerPattern: "☝️ 1 Ngón Trỏ",
   },
   Am: {
     name: "Am",
     roman: "Am (vi)",
     notes: ["A3", "C4", "E4"],
     color: "#ec4899", // Neon Pink
-    gestureHint: "Rock Sign (Index + Pinky)",
-    fingerPattern: "🤘 Rock Sign",
+    gestureHint: "Ngón cái + ngón trỏ giơ cùng lúc (Chữ L)",
+    fingerPattern: "👆+👍 Cái & Trỏ (Chữ L)",
+  },
+  F: {
+    name: "F",
+    roman: "F (IV)",
+    notes: ["F3", "A3", "C4"],
+    color: "#a855f7", // Purple
+    gestureHint: "4 ngón giơ (trừ ngón cái)",
+    fingerPattern: "🖖 4 Ngón Tay",
+  },
+  G: {
+    name: "G",
+    roman: "G (V)",
+    notes: ["G3", "B3", "D4"],
+    color: "#eab308", // Golden Yellow
+    gestureHint: "5 ngón xòe cả bàn tay",
+    fingerPattern: "🖐️ 5 Ngón Xòe",
   },
 };
-
-// Hand landmarks indices (MediaPipe 21 points)
-// 0: Wrist
-// 4: Thumb Tip, 3: Thumb IP, 2: Thumb MCP
-// 8: Index Tip, 6: Index PIP, 5: Index MCP
-// 12: Middle Tip, 10: Middle PIP, 9: Middle MCP
-// 16: Ring Tip, 14: Ring PIP, 13: Ring MCP
-// 20: Pinky Tip, 18: Pinky PIP, 17: Pinky MCP
 
 interface Particle {
   x: number;
@@ -96,7 +89,7 @@ export default function GestureSynth() {
   // Audio Engine Refs
   const synthRef = useRef<Tone.PolySynth | null>(null);
   const filterRef = useRef<Tone.Filter | null>(null);
-  const reverbRef = useRef<Tone.Reverb | null>(null);
+  const reverbRef = useRef<Tone.Freeverb | null>(null);
   const waveformRef = useRef<Tone.Waveform | null>(null);
   const volumeNodeRef = useRef<Tone.Volume | null>(null);
 
@@ -105,21 +98,21 @@ export default function GestureSynth() {
   const currentChordKeyRef = useRef<string>("C");
   const isPinchedRef = useRef(false);
   const lastTriggerTimeRef = useRef(0);
-  const lastRightHandYRef = useRef(0.5);
   const animationFrameIdRef = useRef<number | null>(null);
   const particlesRef = useRef<Particle[]>([]);
   const handsInstanceRef = useRef<any>(null);
-  const cameraInstanceRef = useRef<any>(null);
 
   // React State for UI
   const [isStarted, setIsStarted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentChord, setCurrentChord] = useState<ChordDefinition>(CHORD_MAP.C);
   const [soundPreset, setSoundPreset] = useState<"ethereal" | "retro" | "harp">("ethereal");
-  const [volume, setVolume] = useState(-6); // dB
+  const [volume, setVolume] = useState(-2); // dB (higher default volume)
   const [isMuted, setIsMuted] = useState(false);
+  const [autoStrum, setAutoStrum] = useState(true); // Auto play chord on gesture change
   const [fps, setFps] = useState(0);
-  const [detectedGestureLeft, setDetectedGestureLeft] = useState<string>("Waiting for Left Hand...");
+  const [audioStatus, setAudioStatus] = useState<string>("Ready");
+  const [detectedGestureLeft, setDetectedGestureLeft] = useState<string>("Đang chờ bàn tay...");
   const [rightHandState, setRightHandState] = useState<{ isPinching: boolean; heightPct: number }>({
     isPinching: false,
     heightPct: 50,
@@ -132,13 +125,32 @@ export default function GestureSynth() {
   const frameCountRef = useRef(0);
   const lastFpsTimeRef = useRef(performance.now());
 
+  // AutoStrum ref for access in animation/processing callbacks
+  const autoStrumRef = useRef(true);
+  useEffect(() => {
+    autoStrumRef.current = autoStrum;
+  }, [autoStrum]);
+
   // ==========================================
   // 3. AUDIO ENGINE INITIALIZATION (Tone.js)
   // ==========================================
 
   const setupAudio = useCallback(async () => {
+    // Ensure Web Audio Context is active and running
     await Tone.start();
-    Tone.getContext().lookAhead = 0.03; // Low latency for interactive synth
+    if (Tone.context.state !== "running") {
+      await Tone.context.resume();
+    }
+    Tone.getContext().lookAhead = 0.02;
+
+    // Dispose previous synth if any to prevent memory leak
+    if (synthRef.current) {
+      try {
+        synthRef.current.dispose();
+      } catch (e) {
+        console.warn("Disposing old synth:", e);
+      }
+    }
 
     // Master volume node
     const vol = new Tone.Volume(volume).toDestination();
@@ -148,42 +160,43 @@ export default function GestureSynth() {
     const waveform = new Tone.Waveform(512);
     waveformRef.current = waveform;
 
-    // Rich Reverb effect
-    const reverb = new Tone.Reverb({
-      decay: 3.2,
-      preDelay: 0.02,
-      wet: 0.35,
+    // Reliable Freeverb (instant, synchronous, zero-lag, no generate() needed!)
+    const reverb = new Tone.Freeverb({
+      roomSize: 0.65,
+      dampening: 3200,
+      wet: 0.3,
     });
-    await reverb.generate();
     reverbRef.current = reverb;
 
     // Lowpass filter modulated by Right Hand Y
     const filter = new Tone.Filter({
-      frequency: 2400,
+      frequency: 3800,
       type: "lowpass",
-      rolloff: -24,
-      Q: 2,
+      rolloff: -12,
+      Q: 1.2,
     });
     filterRef.current = filter;
 
     // PolySynth with warm analog polyphonic sound
     const polySynth = new Tone.PolySynth(Tone.Synth, {
+      volume: 0,
       oscillator: {
         type: "fatsawtooth",
-        count: 3,
+        count: 2,
         spread: 20,
       },
       envelope: {
-        attack: 0.04,
-        decay: 0.4,
-        sustain: 0.3,
-        release: 1.2,
+        attack: 0.02,
+        decay: 0.35,
+        sustain: 0.4,
+        release: 1.1,
       },
     });
 
     // Chain: PolySynth -> Filter -> Reverb -> Waveform -> Master Volume
     polySynth.chain(filter, reverb, waveform, vol);
     synthRef.current = polySynth;
+    setAudioStatus("Active (Web Audio Live)");
   }, [volume]);
 
   // Switch Sound Presets
@@ -193,22 +206,22 @@ export default function GestureSynth() {
 
     if (preset === "ethereal") {
       synthRef.current.set({
-        oscillator: { type: "fatsawtooth", count: 3, spread: 25 },
-        envelope: { attack: 0.08, decay: 0.5, sustain: 0.4, release: 1.8 },
+        oscillator: { type: "fatsawtooth", count: 2, spread: 25 },
+        envelope: { attack: 0.04, decay: 0.5, sustain: 0.45, release: 1.6 },
       });
-      if (reverbRef.current) reverbRef.current.wet.value = 0.45;
+      if (reverbRef.current) reverbRef.current.wet.value = 0.35;
     } else if (preset === "retro") {
       synthRef.current.set({
-        oscillator: { type: "pulse", width: 0.4 },
-        envelope: { attack: 0.01, decay: 0.3, sustain: 0.2, release: 0.6 },
+        oscillator: { type: "pulse", width: 0.35 },
+        envelope: { attack: 0.01, decay: 0.25, sustain: 0.25, release: 0.5 },
       });
-      if (reverbRef.current) reverbRef.current.wet.value = 0.2;
+      if (reverbRef.current) reverbRef.current.wet.value = 0.15;
     } else if (preset === "harp") {
       synthRef.current.set({
         oscillator: { type: "triangle8" },
-        envelope: { attack: 0.005, decay: 0.8, sustain: 0.05, release: 1.5 },
+        envelope: { attack: 0.005, decay: 0.7, sustain: 0.05, release: 1.2 },
       });
-      if (reverbRef.current) reverbRef.current.wet.value = 0.5;
+      if (reverbRef.current) reverbRef.current.wet.value = 0.4;
     }
   }, []);
 
@@ -235,21 +248,31 @@ export default function GestureSynth() {
   // 4. CHORD TRIGGERING & DEBOUNCING
   // ==========================================
 
-  const triggerChord = useCallback((chordDef: ChordDefinition, intensity: number = 0.8) => {
+  const triggerChord = useCallback((chordDef: ChordDefinition, intensity: number = 0.9) => {
     const now = performance.now();
-    // 180ms debounce cooldown to prevent audio overlapping glitched triggers
-    if (now - lastTriggerTimeRef.current < 180) return;
+    // 160ms debounce cooldown
+    if (now - lastTriggerTimeRef.current < 160) return;
     lastTriggerTimeRef.current = now;
+
+    // Wake up AudioContext if needed
+    if (Tone.context.state !== "running") {
+      Tone.context.resume().catch((e) => console.warn(e));
+    }
 
     if (synthRef.current) {
       try {
-        synthRef.current.triggerAttackRelease(chordDef.notes, "4n", undefined, Math.min(1, Math.max(0.4, intensity)));
+        synthRef.current.triggerAttackRelease(
+          chordDef.notes,
+          "4n",
+          undefined,
+          Math.min(1, Math.max(0.5, intensity))
+        );
       } catch (e) {
         console.error("Audio trigger error:", e);
       }
     }
 
-    // Spawn visual particles
+    // Spawn visual particles on trigger
     const canvas = canvasRef.current;
     if (canvas) {
       const cx = canvas.width * 0.5;
@@ -271,35 +294,34 @@ export default function GestureSynth() {
     }
   }, []);
 
-  // ==========================================
-  // 5. GESTURE RECOGNITION LOGIC
-  // ==========================================
-
   // Helper: Euclidean distance between 2 normalized points
   const dist = (p1: { x: number; y: number }, p2: { x: number; y: number }) => {
     return Math.hypot(p1.x - p2.x, p1.y - p2.y);
   };
 
+  // ==========================================
+  // 5. GESTURE RECOGNITION LOGIC
+  // ==========================================
+
   // Detect individual fingers extended for a hand
   const getFingersExtended = (landmarks: any[]) => {
-    // MediaPipe Hands landmarks:
-    // Wrist: 0
-    // Thumb: tip 4, ip 3, mcp 2, cmc 1
-    // Index: tip 8, pip 6, mcp 5
-    // Middle: tip 12, pip 10, mcp 9
-    // Ring: tip 16, pip 14, mcp 13
-    // Pinky: tip 20, pip 18, mcp 17
-
     const wrist = landmarks[0];
+    const distToWrist = (idx: number) => dist(wrist, landmarks[idx]);
 
-    // For non-thumb fingers, tip higher (smaller y) than PIP and distance from wrist tip > pip
-    const isIndexExtended = landmarks[8].y < landmarks[6].y && dist(wrist, landmarks[8]) > dist(wrist, landmarks[6]) * 1.1;
-    const isMiddleExtended = landmarks[12].y < landmarks[10].y && dist(wrist, landmarks[12]) > dist(wrist, landmarks[10]) * 1.1;
-    const isRingExtended = landmarks[16].y < landmarks[14].y && dist(wrist, landmarks[16]) > dist(wrist, landmarks[14]) * 1.1;
-    const isPinkyExtended = landmarks[20].y < landmarks[18].y && dist(wrist, landmarks[20]) > dist(wrist, landmarks[18]) * 1.1;
+    // Non-thumb fingers: tip is above PIP (smaller y) AND tip is farther from wrist than PIP
+    const isIndexExtended =
+      landmarks[8].y < landmarks[6].y && distToWrist(8) > distToWrist(6) * 1.08;
+    const isMiddleExtended =
+      landmarks[12].y < landmarks[10].y && distToWrist(12) > distToWrist(10) * 1.08;
+    const isRingExtended =
+      landmarks[16].y < landmarks[14].y && distToWrist(16) > distToWrist(14) * 1.08;
+    const isPinkyExtended =
+      landmarks[20].y < landmarks[18].y && distToWrist(20) > distToWrist(18) * 1.08;
 
-    // Thumb check: distance of tip (4) to pinky MCP (17) compared to ip (3) to pinky MCP (17)
-    const isThumbExtended = dist(landmarks[4], landmarks[17]) > dist(landmarks[3], landmarks[17]) * 1.15;
+    // Thumb check: tip (4) is extended away from palm (pinky base 17 or index base 5)
+    const isThumbExtended =
+      dist(landmarks[4], landmarks[17]) > dist(landmarks[3], landmarks[17]) * 1.12 ||
+      dist(landmarks[4], landmarks[5]) > dist(landmarks[2], landmarks[5]) * 1.15;
 
     return {
       thumb: isThumbExtended,
@@ -310,78 +332,89 @@ export default function GestureSynth() {
     };
   };
 
-  // Process Left Hand (Chord Selector)
-  const processLeftHand = (landmarks: any[]) => {
+  // Process Hand as Chord Selector
+  const processChordHand = (landmarks: any[]) => {
     const f = getFingersExtended(landmarks);
 
-    // 1. Rock sign: Index & Pinky UP, Middle & Ring DOWN
-    const isRockSign = f.index && f.pinky && !f.middle && !f.ring;
+    // 1. Am (vi): Ngón cái + ngón trỏ giơ cùng lúc (Hình chữ L hoặc 2 ngón)
+    const isThumbAndIndex =
+      f.thumb && f.index && !f.middle && !f.ring && !f.pinky;
+    const isTwoFingers =
+      isThumbAndIndex || (f.index && f.middle && !f.ring && !f.pinky && !f.thumb);
 
-    // Count non-thumb extended fingers + thumb extended
-    const totalExtended = (f.index ? 1 : 0) + (f.middle ? 1 : 0) + (f.ring ? 1 : 0) + (f.pinky ? 1 : 0) + (f.thumb ? 1 : 0);
-    const nonThumbCount = (f.index ? 1 : 0) + (f.middle ? 1 : 0) + (f.ring ? 1 : 0) + (f.pinky ? 1 : 0);
+    // Count
+    const totalExtended =
+      (f.index ? 1 : 0) +
+      (f.middle ? 1 : 0) +
+      (f.ring ? 1 : 0) +
+      (f.pinky ? 1 : 0) +
+      (f.thumb ? 1 : 0);
+    const nonThumbCount =
+      (f.index ? 1 : 0) + (f.middle ? 1 : 0) + (f.ring ? 1 : 0) + (f.pinky ? 1 : 0);
 
     let detectedKey: string | null = null;
     let hint = "";
 
-    if (isRockSign) {
+    if (isThumbAndIndex || isTwoFingers) {
       detectedKey = "Am";
-      hint = "🤘 Rock Sign → Am (vi)";
+      hint = "👆+👍 Cái & Trỏ (Chữ L) → Am (vi)";
     } else if (totalExtended === 5) {
-      // 5 fingers extended: Open Palm
       detectedKey = "G";
-      hint = "🖐️ 5 Fingers → G (V)";
-    } else if (totalExtended === 4 || nonThumbCount === 4) {
-      // 4 fingers extended
+      hint = "🖐️ 5 Ngón Xòe → G (V)";
+    } else if (nonThumbCount === 4 || totalExtended === 4) {
       detectedKey = "F";
-      hint = "🖖 4 Fingers → F (IV)";
-    } else if (totalExtended === 1 || (f.index && !f.middle && !f.ring && !f.pinky)) {
-      // 1 finger extended (primarily Index)
+      hint = "🖖 4 Ngón Tay → F (IV)";
+    } else if (
+      (f.index && !f.middle && !f.ring && !f.pinky && !f.thumb) ||
+      totalExtended === 1
+    ) {
       detectedKey = "C";
-      hint = "☝️ 1 Finger → C (I)";
+      hint = "☝️ 1 Ngón Trỏ → C (I)";
     } else {
-      hint = `${totalExtended} fingers extended`;
+      hint = `${totalExtended} ngón giơ: Chờ cử chỉ hợp âm...`;
     }
 
     if (detectedKey && CHORD_MAP[detectedKey]) {
       if (currentChordKeyRef.current !== detectedKey) {
         currentChordKeyRef.current = detectedKey;
-        setCurrentChord(CHORD_MAP[detectedKey]);
+        const newChord = CHORD_MAP[detectedKey];
+        setCurrentChord(newChord);
+
+        // Auto-Strum if enabled: immediately play chord upon gesture switch!
+        if (autoStrumRef.current) {
+          triggerChord(newChord, 0.85);
+        }
       }
     }
 
     setDetectedGestureLeft(hint);
   };
 
-  // Process Right Hand (Trigger / Modulation)
-  const processRightHand = (landmarks: any[]) => {
+  // Process Hand as Trigger / Modulation
+  const processTriggerHand = (landmarks: any[]) => {
     // 1. Pinch Detection: Thumb tip (4) and Index tip (8)
     const thumbTip = landmarks[4];
     const indexTip = landmarks[8];
     const pinchDistance = dist(thumbTip, indexTip);
 
-    // Height Y: wrist (0) or index tip
+    // Height Y: wrist (0)
     const handY = landmarks[0].y; // 0 (top) to 1 (bottom)
     const heightPercent = Math.round((1 - handY) * 100);
-    lastRightHandYRef.current = handY;
 
-    // Real-time Modulation: Height controls Tone.Filter frequency and synth volume
+    // Real-time Modulation: Height controls Filter frequency (300Hz - 6500Hz)
     if (filterRef.current) {
-      // handY is 0 at top, 1 at bottom -> higher hand = brighter filter
-      const minFreq = 300;
-      const maxFreq = 6500;
-      const targetFreq = minFreq + (1 - handY) * (maxFreq - minFreq);
+      const targetFreq = 400 + (1 - handY) * 5800;
       filterRef.current.frequency.rampTo(targetFreq, 0.08);
     }
 
-    // Pinch threshold: < 0.055 is pinched, > 0.08 is released
-    const isPinchingNow = pinchDistance < 0.055;
+    // Pinch threshold: generous threshold (< 0.08 is pinch, > 0.11 is release)
+    const isPinchingNow = pinchDistance < 0.08;
 
     // Trigger on State Transition: OPEN -> PINCH
     if (isPinchingNow && !isPinchedRef.current) {
       isPinchedRef.current = true;
       const activeChord = CHORD_MAP[currentChordKeyRef.current] || CHORD_MAP.C;
-      triggerChord(activeChord, 0.9);
+      triggerChord(activeChord, 1.0);
 
       // Spawn burst effect at right hand index position
       const canvas = canvasRef.current;
@@ -403,7 +436,7 @@ export default function GestureSynth() {
           });
         }
       }
-    } else if (!isPinchingNow && pinchDistance > 0.075) {
+    } else if (!isPinchingNow && pinchDistance > 0.11) {
       isPinchedRef.current = false;
     }
 
@@ -437,35 +470,36 @@ export default function GestureSynth() {
     ctx.scale(-1, 1);
     ctx.drawImage(results.image || video, 0, 0, width, height);
 
-    // Cyberpunk gradient overlay on video
+    // Dark sleek gradient overlay
     const overlayGrad = ctx.createLinearGradient(0, 0, 0, height);
-    overlayGrad.addColorStop(0, "rgba(8, 10, 24, 0.35)");
-    overlayGrad.addColorStop(0.5, "rgba(10, 15, 35, 0.2)");
-    overlayGrad.addColorStop(1, "rgba(5, 7, 18, 0.75)");
+    overlayGrad.addColorStop(0, "rgba(8, 10, 24, 0.4)");
+    overlayGrad.addColorStop(0.5, "rgba(10, 15, 35, 0.25)");
+    overlayGrad.addColorStop(1, "rgba(5, 7, 18, 0.8)");
     ctx.fillStyle = overlayGrad;
     ctx.fillRect(0, 0, width, height);
-    ctx.restore(); // Restore normal coordinate orientation
+    ctx.restore();
 
     // 2. Draw Hand Landmarks & Futuristic Skeleton
-    if (results.multiHandLandmarks && results.multiHandedness) {
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
       for (let i = 0; i < results.multiHandLandmarks.length; i++) {
         const landmarks = results.multiHandLandmarks[i];
-        const handedness = results.multiHandedness[i];
         
-        // MediaPipe in mirrored camera:
-        // When user looks at screen, physical Left hand is labeled 'Left'
-        const isLeftHand = handedness.label === "Left";
-        const handThemeColor = isLeftHand ? "#06b6d4" : "#ec4899"; // Cyan for Left, Pink for Right
+        // Determine hand role by screen position in mirrored view
+        // The hand on the left half of the screen = Chord Hand (Cyan)
+        // The hand on the right half of the screen = Trigger Hand (Pink)
+        const wristScreenX = (1 - landmarks[0].x) * width;
+        const isChordHand =
+          results.multiHandLandmarks.length === 1 || wristScreenX < width * 0.5;
+        const handThemeColor = isChordHand ? "#06b6d4" : "#ec4899";
 
-        // Draw Skeleton Lines
+        // Skeleton connections
         const CONNECTIONS = [
-          // Palm
           [0, 1], [1, 2], [2, 3], [3, 4],
           [0, 5], [5, 6], [6, 7], [7, 8],
           [5, 9], [9, 10], [10, 11], [11, 12],
           [9, 13], [13, 14], [14, 15], [15, 16],
           [13, 17], [17, 18], [18, 19], [19, 20],
-          [0, 17]
+          [0, 17],
         ];
 
         ctx.lineWidth = 3;
@@ -474,17 +508,15 @@ export default function GestureSynth() {
         ctx.shadowBlur = 10;
 
         for (const [start, end] of CONNECTIONS) {
-          // Mirror X for landmarks
           const p1 = { x: (1 - landmarks[start].x) * width, y: landmarks[start].y * height };
           const p2 = { x: (1 - landmarks[end].x) * width, y: landmarks[end].y * height };
-
           ctx.beginPath();
           ctx.moveTo(p1.x, p1.y);
           ctx.lineTo(p2.x, p2.y);
           ctx.stroke();
         }
 
-        // Draw Landmark Nodes
+        // Draw Nodes
         ctx.shadowBlur = 12;
         for (let j = 0; j < landmarks.length; j++) {
           const pt = { x: (1 - landmarks[j].x) * width, y: landmarks[j].y * height };
@@ -495,29 +527,29 @@ export default function GestureSynth() {
           ctx.fill();
         }
 
-        // Label above wrist
-        const wristPt = { x: (1 - landmarks[0].x) * width, y: landmarks[0].y * height };
+        // Floating Badge above wrist
+        const wristPt = { x: wristScreenX, y: landmarks[0].y * height };
         ctx.shadowBlur = 6;
         ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
         ctx.beginPath();
-        ctx.roundRect(wristPt.x - 70, wristPt.y + 15, 140, 28, 8);
+        ctx.roundRect(wristPt.x - 75, wristPt.y + 15, 150, 28, 8);
         ctx.fill();
         ctx.strokeStyle = handThemeColor;
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
         ctx.fillStyle = handThemeColor;
-        ctx.font = "bold 12px Inter, sans-serif";
+        ctx.font = "bold 11px Inter, sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(
-          isLeftHand ? "L: CHORD SELECT" : "R: TRIGGER / MOD",
+          isChordHand ? "TAY CHỌN HỢP ÂM" : "TAY GẢY & BIỂU CẢM",
           wristPt.x,
-          wristPt.y + 34
+          wristPt.y + 33
         );
       }
     }
 
-    // 3. Draw Audio Waveform Visualizer (Gold / Neon Pink gradient)
+    // 3. Draw Audio Waveform Visualizer (Gold to Pink gradient)
     if (waveformRef.current) {
       const waveformValues = waveformRef.current.getValue();
       const waveBaseY = height * 0.78;
@@ -526,11 +558,15 @@ export default function GestureSynth() {
       ctx.save();
       ctx.beginPath();
 
-      // Create glowing gradient for waveform (Golden Yellow to Neon Pink)
-      const waveGrad = ctx.createLinearGradient(0, waveBaseY - waveAmplitude, width, waveBaseY + waveAmplitude);
-      waveGrad.addColorStop(0, "#facc15"); // Golden Yellow
+      const waveGrad = ctx.createLinearGradient(
+        0,
+        waveBaseY - waveAmplitude,
+        width,
+        waveBaseY + waveAmplitude
+      );
+      waveGrad.addColorStop(0, "#facc15"); // Gold
       waveGrad.addColorStop(0.5, "#fb7185"); // Rose
-      waveGrad.addColorStop(1, "#ec4899"); // Neon Pink
+      waveGrad.addColorStop(1, "#ec4899"); // Pink
 
       ctx.strokeStyle = waveGrad;
       ctx.lineWidth = 3.5;
@@ -543,7 +579,6 @@ export default function GestureSynth() {
       for (let i = 0; i < waveformValues.length; i++) {
         const v = waveformValues[i];
         const y = waveBaseY + v * waveAmplitude;
-
         if (i === 0) {
           ctx.moveTo(x, y);
         } else {
@@ -554,9 +589,9 @@ export default function GestureSynth() {
 
       ctx.stroke();
 
-      // Secondary subtle glow reflection line
+      // Subtle reflection
       ctx.lineWidth = 1.5;
-      ctx.strokeStyle = "rgba(250, 204, 21, 0.4)";
+      ctx.strokeStyle = "rgba(250, 204, 21, 0.35)";
       ctx.shadowBlur = 8;
       ctx.stroke();
       ctx.restore();
@@ -608,6 +643,15 @@ export default function GestureSynth() {
       // 1. Initialize Tone.js Audio Engine
       await setupAudio();
 
+      // Play immediate welcoming chord so user HEARS SOUND right away!
+      if (synthRef.current) {
+        try {
+          synthRef.current.triggerAttackRelease(["C4", "E4", "G4"], "4n");
+        } catch (e) {
+          console.warn("Welcome chime failed:", e);
+        }
+      }
+
       // 2. Initialize Camera Stream
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -619,7 +663,7 @@ export default function GestureSynth() {
       });
 
       if (!videoRef.current) {
-        throw new Error("Video element is not available.");
+        throw new Error("Video element không khả dụng.");
       }
 
       videoRef.current.srcObject = stream;
@@ -632,7 +676,6 @@ export default function GestureSynth() {
         }
       });
 
-      // Match canvas dimensions to video
       if (canvasRef.current && videoRef.current) {
         canvasRef.current.width = videoRef.current.videoWidth || 1280;
         canvasRef.current.height = videoRef.current.videoHeight || 720;
@@ -643,37 +686,45 @@ export default function GestureSynth() {
       const HandsClass = handsModule.Hands || (window as any).Hands;
 
       if (!HandsClass) {
-        throw new Error("Could not initialize MediaPipe Hands.");
+        throw new Error("Không thể khởi tạo MediaPipe Hands.");
       }
 
       const hands = new HandsClass({
-        locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+        locateFile: (file: string) =>
+          `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
       });
 
       hands.setOptions({
         maxNumHands: 2,
         modelComplexity: 1,
-        minDetectionConfidence: 0.65,
-        minTrackingConfidence: 0.6,
+        minDetectionConfidence: 0.6,
+        minTrackingConfidence: 0.55,
       });
 
       hands.onResults((results: any) => {
         if (!isRunningRef.current) return;
 
         // Process hand gestures
-        if (results.multiHandLandmarks && results.multiHandedness) {
-          for (let i = 0; i < results.multiHandLandmarks.length; i++) {
-            const landmarks = results.multiHandLandmarks[i];
-            const handedness = results.multiHandedness[i];
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+          if (results.multiHandLandmarks.length === 1) {
+            // Single hand: Treat as Chord Hand (most intuitive!)
+            processChordHand(results.multiHandLandmarks[0]);
+          } else {
+            // 2 hands: Sort by screen X (mirrored)
+            // Left-most on screen = Chord Hand, Right-most = Trigger Hand
+            const hand0X = (1 - results.multiHandLandmarks[0][0].x);
+            const hand1X = (1 - results.multiHandLandmarks[1][0].x);
 
-            if (handedness.label === "Left") {
-              processLeftHand(landmarks);
-            } else if (handedness.label === "Right") {
-              processRightHand(landmarks);
+            if (hand0X < hand1X) {
+              processChordHand(results.multiHandLandmarks[0]);
+              processTriggerHand(results.multiHandLandmarks[1]);
+            } else {
+              processChordHand(results.multiHandLandmarks[1]);
+              processTriggerHand(results.multiHandLandmarks[0]);
             }
           }
         } else {
-          setDetectedGestureLeft("Raise your Left Hand to select chord");
+          setDetectedGestureLeft("Đưa bàn tay lên trước camera...");
         }
 
         // Render visual frame
@@ -691,7 +742,7 @@ export default function GestureSynth() {
           try {
             await hands.send({ image: videoRef.current });
           } catch (err) {
-            console.warn("Hand processing frame skip:", err);
+            console.warn("Hand frame processing:", err);
           }
         }
         animationFrameIdRef.current = requestAnimationFrame(processFrame);
@@ -703,7 +754,10 @@ export default function GestureSynth() {
       setIsLoading(false);
     } catch (err: any) {
       console.error("Initialization failed:", err);
-      setErrorMessage(err.message || "Could not start camera or audio. Please grant camera permissions.");
+      setErrorMessage(
+        err.message ||
+          "Không thể mở camera hoặc audio. Vui lòng cấp quyền truy cập camera trong trình duyệt."
+      );
       setIsLoading(false);
     }
   };
@@ -725,7 +779,7 @@ export default function GestureSynth() {
       try {
         synthRef.current.dispose();
       } catch (e) {
-        console.warn("Synth dispose error:", e);
+        console.warn("Synth dispose:", e);
       }
       synthRef.current = null;
     }
@@ -755,6 +809,12 @@ export default function GestureSynth() {
     <div
       ref={containerRef}
       className="relative w-full h-screen bg-slate-950 text-slate-100 overflow-hidden select-none font-sans flex flex-col"
+      onClick={() => {
+        // Clicking anywhere also triggers chord for easy testing!
+        if (isStarted) {
+          triggerChord(currentChord, 0.95);
+        }
+      }}
     >
       {/* Hidden processing video element */}
       <video ref={videoRef} className="hidden" playsInline muted />
@@ -768,7 +828,10 @@ export default function GestureSynth() {
       {/* ==========================================
           TOP NAVIGATION BAR
          ========================================== */}
-      <header className="relative z-20 flex items-center justify-between px-6 py-4 bg-slate-950/40 backdrop-blur-md border-b border-white/10">
+      <header
+        className="relative z-20 flex items-center justify-between px-6 py-4 bg-slate-950/40 backdrop-blur-md border-b border-white/10"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 via-purple-500 to-pink-500 p-0.5 shadow-lg shadow-cyan-500/20">
             <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
@@ -787,6 +850,30 @@ export default function GestureSynth() {
         <div className="flex items-center gap-3">
           {isStarted && (
             <>
+              {/* MANUAL TEST SOUND BUTTON (Guaranteed Sound Verification) */}
+              <button
+                onClick={() => triggerChord(currentChord, 1.0)}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-semibold text-xs shadow-lg shadow-pink-500/25 active:scale-95 transition cursor-pointer"
+                title="Bấm để thử phát âm thanh hợp âm hiện tại"
+              >
+                <Music className="w-4 h-4" />
+                <span>Thử Âm ({currentChord.name})</span>
+              </button>
+
+              {/* Auto-Strum Toggle */}
+              <button
+                onClick={() => setAutoStrum(!autoStrum)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition ${
+                  autoStrum
+                    ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300"
+                    : "bg-slate-900/80 border-white/10 text-slate-400"
+                }`}
+                title="Tự động phát khi đổi cử chỉ tay"
+              >
+                <Zap className={`w-3.5 h-3.5 ${autoStrum ? "text-cyan-400 fill-cyan-400" : ""}`} />
+                <span>Tự động gảy: {autoStrum ? "BẬT" : "TẮT"}</span>
+              </button>
+
               {/* Sound Presets */}
               <div className="flex items-center bg-slate-900/80 border border-white/10 rounded-xl p-1 text-xs">
                 {(["ethereal", "retro", "harp"] as const).map((p) => (
@@ -809,14 +896,14 @@ export default function GestureSynth() {
                 <button
                   onClick={toggleMute}
                   className="text-slate-300 hover:text-white transition"
-                  title={isMuted ? "Unmute" : "Mute"}
+                  title={isMuted ? "Bật âm" : "Tắt âm"}
                 >
                   {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-cyan-400" />}
                 </button>
                 <input
                   type="range"
-                  min="-30"
-                  max="4"
+                  min="-24"
+                  max="6"
                   step="1"
                   value={volume}
                   onChange={(e) => handleVolumeChange(Number(e.target.value))}
@@ -840,7 +927,7 @@ export default function GestureSynth() {
                 ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300"
                 : "bg-slate-900/80 border-white/10 text-slate-400 hover:text-white"
             }`}
-            title="Toggle Guide"
+            title="Bật/Tắt hướng dẫn cử chỉ"
           >
             <Info className="w-4 h-4" />
           </button>
@@ -849,7 +936,7 @@ export default function GestureSynth() {
           <button
             onClick={toggleFullscreen}
             className="p-2 rounded-xl bg-slate-900/80 border border-white/10 text-slate-400 hover:text-white transition"
-            title="Toggle Fullscreen"
+            title="Toàn màn hình"
           >
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </button>
@@ -859,7 +946,7 @@ export default function GestureSynth() {
             <button
               onClick={stopApp}
               className="p-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition"
-              title="Stop Camera & Audio"
+              title="Dừng Camera & Audio"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
@@ -871,7 +958,10 @@ export default function GestureSynth() {
           WELCOME / AUTOPLAY OVERLAY (START SCREEN)
          ========================================== */}
       {!isStarted && (
-        <div className="relative z-30 flex-1 flex items-center justify-center p-6 bg-slate-950/85 backdrop-blur-xl">
+        <div
+          className="relative z-30 flex-1 flex items-center justify-center p-6 bg-slate-950/85 backdrop-blur-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="max-w-md w-full bg-slate-900/90 border border-white/10 rounded-2xl p-8 shadow-2xl shadow-cyan-500/10 text-center flex flex-col items-center">
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-cyan-500 via-indigo-500 to-pink-500 p-1 mb-6 shadow-xl shadow-cyan-500/30">
               <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
@@ -883,7 +973,7 @@ export default function GestureSynth() {
               Chơi Nhạc Bằng Cử Chỉ Tay
             </h2>
             <p className="text-sm text-slate-400 mb-6 leading-relaxed">
-              Trải nghiệm tổng hợp âm thanh đa âm polyphonic trực tiếp bằng AI thị giác máy tính qua Webcam. Không chạm phím, thỏa sức sáng tạo âm nhạc!
+              Nhận diện cử chỉ tay qua Webcam với Google MediaPipe và phát âm thanh đa âm bằng Web Audio API (Tone.js).
             </p>
 
             {errorMessage && (
@@ -895,7 +985,7 @@ export default function GestureSynth() {
             <button
               onClick={startApp}
               disabled={isLoading}
-              className="w-full py-4 px-6 rounded-xl font-semibold text-white bg-gradient-to-r from-cyan-500 via-purple-600 to-pink-500 hover:opacity-95 active:scale-[0.98] transition shadow-lg shadow-purple-500/25 flex items-center justify-center gap-3 disabled:opacity-50 cursor-pointer"
+              className="w-full py-4 px-6 rounded-xl font-semibold text-white bg-gradient-to-r from-cyan-500 via-purple-600 to-pink-500 hover:opacity-95 active:scale-[0.98] transition shadow-lg shadow-purple-500/25 flex items-center justify-center gap-3 disabled:opacity-50 cursor-pointer text-base"
             >
               {isLoading ? (
                 <>
@@ -930,19 +1020,25 @@ export default function GestureSynth() {
         <div className="relative z-10 flex-1 pointer-events-none flex flex-col justify-between p-6">
           {/* Top Info Badges */}
           <div className="flex items-start justify-between gap-4">
-            {/* Left Hand Status Badge */}
-            <div className="pointer-events-auto bg-slate-950/70 backdrop-blur-md border border-cyan-500/30 rounded-2xl p-3.5 max-w-xs shadow-lg shadow-cyan-500/10">
+            {/* Chord Selector Status Badge */}
+            <div
+              className="pointer-events-auto bg-slate-950/70 backdrop-blur-md border border-cyan-500/30 rounded-2xl p-3.5 max-w-xs shadow-lg shadow-cyan-500/10"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
                 <span className="text-xs font-semibold uppercase tracking-wider text-cyan-400">
-                  Tay Trái (Chord Selector)
+                  Bàn Tay Chọn Hợp Âm
                 </span>
               </div>
               <p className="text-sm font-medium text-slate-200">{detectedGestureLeft}</p>
             </div>
 
-            {/* Right Hand Status Badge */}
-            <div className="pointer-events-auto bg-slate-950/70 backdrop-blur-md border border-pink-500/30 rounded-2xl p-3.5 max-w-xs shadow-lg shadow-pink-500/10">
+            {/* Trigger & Modulation Status Badge */}
+            <div
+              className="pointer-events-auto bg-slate-950/70 backdrop-blur-md border border-pink-500/30 rounded-2xl p-3.5 max-w-xs shadow-lg shadow-pink-500/10"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div className="flex items-center gap-2 mb-1.5">
                 <span
                   className={`w-2.5 h-2.5 rounded-full ${
@@ -950,7 +1046,7 @@ export default function GestureSynth() {
                   } transition-all`}
                 />
                 <span className="text-xs font-semibold uppercase tracking-wider text-pink-400">
-                  Tay Phải (Trigger & Mod)
+                  Bàn Tay Gảy & Biểu Cảm
                 </span>
               </div>
               <div className="text-xs space-y-1 text-slate-300">
@@ -963,7 +1059,7 @@ export default function GestureSynth() {
                         : "bg-slate-800 text-slate-400"
                     }`}
                   >
-                    {rightHandState.isPinching ? "TRIGGERED 💥" : "READY"}
+                    {rightHandState.isPinching ? "GẢY NỐT 💥" : "SẴN SÀNG"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
@@ -978,10 +1074,13 @@ export default function GestureSynth() {
 
           {/* Interactive Gesture Quick Guide Sidebar */}
           {showHelper && (
-            <div className="pointer-events-auto self-start bg-slate-950/75 backdrop-blur-md border border-white/10 rounded-2xl p-4 max-w-xs space-y-3 mt-4 text-xs shadow-xl">
+            <div
+              className="pointer-events-auto self-start bg-slate-950/75 backdrop-blur-md border border-white/10 rounded-2xl p-4 max-w-xs space-y-3 mt-4 text-xs shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
               <h3 className="font-bold text-slate-300 flex items-center justify-between">
                 <span>HƯỚNG DẪN CỬ CHỈ</span>
-                <span className="text-[10px] text-cyan-400 font-mono">CHORD ENGINE</span>
+                <span className="text-[10px] text-cyan-400 font-mono">CHORD MAP</span>
               </h3>
               <div className="space-y-2">
                 {Object.values(CHORD_MAP).map((chord) => {
@@ -989,10 +1088,15 @@ export default function GestureSynth() {
                   return (
                     <div
                       key={chord.name}
-                      className={`p-2 rounded-xl border transition-all flex items-center justify-between ${
+                      onClick={() => {
+                        setCurrentChord(chord);
+                        currentChordKeyRef.current = chord.name;
+                        triggerChord(chord, 1.0);
+                      }}
+                      className={`p-2 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
                         isActive
                           ? "bg-white/10 border-white/30 scale-105 shadow-md"
-                          : "bg-slate-900/50 border-white/5 opacity-75"
+                          : "bg-slate-900/50 border-white/5 opacity-75 hover:opacity-100"
                       }`}
                       style={{ borderLeftColor: chord.color, borderLeftWidth: "4px" }}
                     >
@@ -1013,10 +1117,10 @@ export default function GestureSynth() {
 
               <div className="pt-2 border-t border-white/10 space-y-1 text-slate-400 text-[11px]">
                 <p>
-                  👉 <strong className="text-slate-200">Gảy nốt:</strong> Búng ngón trỏ & cái tay phải (Pinch).
+                  👉 <strong className="text-slate-200">Gảy nốt:</strong> Búng ngón trỏ & cái tay phải (Pinch) HOẶC nhấp chuột vào màn hình.
                 </p>
                 <p>
-                  👉 <strong className="text-slate-200">Âm sắc:</strong> Di chuyển tay phải lên cao để mở bộ lọc (Filter Cutoff).
+                  👉 <strong className="text-slate-200">Âm sắc:</strong> Di chuyển tay phải lên cao để mở bộ lọc sáng hơn.
                 </p>
               </div>
             </div>
@@ -1025,9 +1129,16 @@ export default function GestureSynth() {
           {/* ==========================================
               CENTER-BOTTOM MASSIVE GLOWING CHORD BADGE
              ========================================== */}
-          <div className="pointer-events-auto flex flex-col items-center justify-center mb-6">
+          <div
+            className="pointer-events-auto flex flex-col items-center justify-center mb-6 cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerChord(currentChord, 1.0);
+            }}
+            title="Bấm vào để phát hợp âm này!"
+          >
             <div
-              className="relative px-10 py-5 rounded-3xl backdrop-blur-xl transition-all duration-300 flex flex-col items-center shadow-2xl border"
+              className="relative px-10 py-5 rounded-3xl backdrop-blur-xl transition-all duration-300 flex flex-col items-center shadow-2xl border active:scale-95"
               style={{
                 backgroundColor: `${currentChord.color}15`,
                 borderColor: `${currentChord.color}60`,
@@ -1048,7 +1159,7 @@ export default function GestureSynth() {
               {/* Subtitle with active note pitches */}
               <div className="flex items-center gap-2 mt-2">
                 <span className="text-xs uppercase tracking-widest text-slate-400 font-medium">
-                  Hợp âm {currentChord.name} Major:
+                  Hợp âm {currentChord.name}:
                 </span>
                 <div className="flex gap-1.5">
                   {currentChord.notes.map((note) => (
