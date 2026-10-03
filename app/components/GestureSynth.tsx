@@ -944,14 +944,14 @@ export default function GestureSynth() {
               <button
                 onClick={() => setShowUserDropdown(!showUserDropdown)}
                 className="flex items-center gap-2 p-1.5 pl-2.5 pr-3 rounded-xl bg-slate-900/80 border border-cyan-500/40 hover:border-cyan-400 transition cursor-pointer text-xs"
-                title={`Signed in as ${user.name}`}
+                title={`Signed in as ${(user as any).user_metadata?.full_name || user.email}`}
               >
-                <img
-                  src={user.avatar}
-                  alt={user.name}
-                  className="w-5 h-5 rounded-full border border-cyan-400 object-cover"
-                />
-                <span className="font-semibold text-slate-200 hidden sm:inline">{user.name.split(" ")[0]}</span>
+                <div className="w-5 h-5 rounded-full bg-cyan-500/20 border border-cyan-400 flex items-center justify-center text-[10px] text-cyan-300 font-bold">
+                  {(user.email?.[0] || "U").toUpperCase()}
+                </div>
+                <span className="font-semibold text-slate-200 hidden sm:inline">
+                  {(user as any).user_metadata?.full_name || user.email?.split("@")[0] || "User"}
+                </span>
                 <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
                   PRO
                 </span>
@@ -963,7 +963,9 @@ export default function GestureSynth() {
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="px-3 py-2 border-b border-white/10 mb-1">
-                    <p className="font-semibold text-white truncate">{user.name}</p>
+                    <p className="font-semibold text-white truncate">
+                      {(user as any).user_metadata?.full_name || user.email?.split("@")[0] || "User"}
+                    </p>
                     <p className="text-[11px] text-slate-400 truncate">{user.email}</p>
                   </div>
                   <Link
