@@ -45,7 +45,6 @@ export default function HomePage() {
       <footer className="w-full bg-slate-950/80 border-t border-white/10 py-8 text-center text-sm text-slate-500 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 space-y-2">
           <p>© {new Date().getFullYear()} NexusStore. Built with Next.js, ShadCN UI & Supabase Authentication.</p>
-          <p className="text-xs text-slate-600">SE20B.NJS — Lab 3 Practical Project by Đỗ Bá Quang Hưng (QE190032)</p>
         </div>
       </footer>
     </div>
