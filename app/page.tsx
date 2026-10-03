@@ -26,7 +26,7 @@ export default function HomePage() {
           </h1>
 
           <p className="text-sm sm:text-base text-slate-400 max-w-2xl leading-relaxed">
-            Khám phá bộ sưu tập thiết bị công nghệ cao cấp nhất của NexusStore. Đăng nhập để lưu vào giỏ hàng.
+            Discover NexusStore&apos;s premier collection of cutting-edge technology. Sign in to save items to your cart.
           </p>
         </div>
 
