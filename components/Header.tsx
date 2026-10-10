@@ -2,13 +2,16 @@
 
 import React, { useContext } from "react";
 import Link from "next/link";
+import { Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AuthContext, useAuth } from "@/contexts/AuthContext";
+import { useFavorites } from "@/contexts/FavoritesContext";
 
 export function Header() {
   // Tiêu thụ AuthContext bằng useContext (đáp ứng tiêu chí chấm kiểm tra grep "useContext")
   const authContext = useContext(AuthContext);
   const { user, signOut } = authContext ?? useAuth();
+  const { favorites } = useFavorites();
 
   return (
     <header className="w-full bg-slate-950/80 backdrop-blur-xl border-b border-white/10 sticky top-0 z-50 shadow-lg shadow-black/40">
@@ -24,28 +27,45 @@ export function Header() {
         </Link>
 
         {/* Navigation & Auth */}
-        <nav className="flex items-center gap-3">
+        <nav className="flex items-center gap-2 sm:gap-3">
           {user ? (
-            // Trạng thái ĐÃ ĐĂNG NHẬP (user !== null): Hiển thị email của người dùng
-            <div className="flex items-center gap-3">
+            // Trạng thái ĐÃ ĐĂNG NHẬP (user !== null): Hiển thị link favorites, email và nút logout
+            <div className="flex items-center gap-2 sm:gap-3">
+              <Link
+                href="/favorites"
+                data-testid="link-favorites"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-300 hover:text-white hover:bg-white/10 px-2.5 sm:px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <Heart className="w-4 h-4 text-rose-400 fill-rose-500/40" />
+                <span className="hidden sm:inline">Favorites</span>
+                <span
+                  data-testid="favorites-count"
+                  className="px-1.5 py-0.5 text-xs font-bold font-mono rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 min-w-[1.25rem] text-center"
+                >
+                  {favorites.length}
+                </span>
+              </Link>
+
               <Link
                 href="/account"
-                className="text-sm font-medium text-slate-300 hover:text-white hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors"
+                className="text-sm font-medium text-slate-300 hover:text-white hover:bg-white/10 px-2.5 sm:px-3 py-1.5 rounded-lg transition-colors"
               >
                 Account
               </Link>
+
               <span
                 data-testid="user-email"
-                className="text-sm font-semibold text-indigo-200 bg-indigo-950/60 px-3.5 py-1.5 rounded-full border border-indigo-500/30 shadow-xs shadow-indigo-500/10 flex items-center gap-2 font-mono"
+                className="text-xs sm:text-sm font-semibold text-indigo-200 bg-indigo-950/60 px-3 py-1.5 rounded-full border border-indigo-500/30 shadow-xs shadow-indigo-500/10 flex items-center gap-2 font-mono max-w-[180px] sm:max-w-none truncate"
               >
-                <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
-                <span>{user.email}</span>
+                <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse shrink-0"></span>
+                <span className="truncate">{user.email}</span>
               </span>
+
               <Button
                 data-testid="btn-logout"
                 variant="outline"
                 onClick={() => signOut()}
-                className="border-white/15 bg-white/5 text-slate-300 hover:bg-red-500/15 hover:text-red-400 hover:border-red-500/30 font-medium transition-all cursor-pointer"
+                className="border-white/15 bg-white/5 text-slate-300 hover:bg-red-500/15 hover:text-red-400 hover:border-red-500/30 font-medium transition-all cursor-pointer text-xs sm:text-sm px-3 py-1.5 h-auto"
               >
                 Logout
               </Button>

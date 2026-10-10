@@ -4,6 +4,7 @@ export interface Product {
   image: string;
   description: string;
   price: number;
+  category: string;
 }
 
 export const products: Product[] = [
@@ -13,6 +14,7 @@ export const products: Product[] = [
     image: "/images/headphones.svg",
     description: "Premium over-ear wireless headphones with active noise cancellation and 30-hour battery life.",
     price: 199.99,
+    category: "Audio",
   },
   {
     id: 2,
@@ -20,6 +22,7 @@ export const products: Product[] = [
     image: "/images/keyboard.svg",
     description: "Compact RGB mechanical keyboard featuring hot-swappable tactile switches and aluminum chassis.",
     price: 89.99,
+    category: "Gaming",
   },
   {
     id: 3,
@@ -27,6 +30,7 @@ export const products: Product[] = [
     image: "/images/mouse.svg",
     description: "Wireless ergonomic mouse with high-precision optical sensor and customizable macro buttons.",
     price: 49.99,
+    category: "Peripherals",
   },
   {
     id: 4,
@@ -34,6 +38,7 @@ export const products: Product[] = [
     image: "/images/monitor.svg",
     description: "34-inch curved gaming display with 144Hz refresh rate and vibrant HDR color reproduction.",
     price: 499.99,
+    category: "Displays",
   },
   {
     id: 5,
@@ -41,6 +46,7 @@ export const products: Product[] = [
     image: "/images/microphone.svg",
     description: "Professional USB condenser microphone perfect for streaming, podcasting, and voiceover work.",
     price: 79.99,
+    category: "Audio",
   },
   {
     id: 6,
@@ -48,5 +54,6 @@ export const products: Product[] = [
     image: "/images/smartwatch.svg",
     description: "Water-resistant smartwatch with real-time heart rate tracking, GPS, and multi-sport workout modes.",
     price: 129.99,
+    category: "Wearables",
   },
 ];
