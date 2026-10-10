@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import { products } from "@/data/products";
 import { ProductCard } from "@/components/ProductCard";
 import { Header } from "@/components/Header";
+import { CategorySelect } from "@/components/CategorySelect";
 import { Button } from "@/components/ui/button";
 
 interface HomePageProps {
@@ -83,23 +84,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               />
             </div>
 
-            {/* Category Select Dropdown */}
+            {/* Category Select Dropdown (Auto-submits on change) */}
             <div className="sm:w-52">
-              <select
-                name="category"
-                data-testid="category-select"
+              <CategorySelect
                 defaultValue={category || ""}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-white/10 text-white text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all cursor-pointer"
-              >
-                <option value="" className="bg-slate-900 text-white">
-                  All
-                </option>
-                {categories.map((cat) => (
-                  <option key={cat} value={cat} className="bg-slate-900 text-white">
-                    {cat}
-                  </option>
-                ))}
-              </select>
+                categories={categories}
+              />
             </div>
 
             {/* Submit Button */}
