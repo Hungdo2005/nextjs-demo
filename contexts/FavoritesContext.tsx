@@ -61,7 +61,8 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
         try {
           const { data, error } = await supabase
             .from("favorites")
-            .select("product_id");
+            .select("product_id")
+            .eq("user_id", user.id);
 
           if (!error && data && isMounted) {
             const ids = data.map((item: { product_id: number }) => item.product_id);
@@ -109,7 +110,8 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase
           .from("favorites")
           .delete()
-          .eq("product_id", productId);
+          .eq("product_id", productId)
+          .eq("user_id", user.id);
 
         if (error) {
           console.error("Supabase delete favorite error:", error.message);
@@ -119,7 +121,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
       } else {
         const { error } = await supabase
           .from("favorites")
-          .insert({ product_id: productId });
+          .insert({ product_id: productId, user_id: user.id });
 
         if (error) {
           console.error("Supabase insert favorite error:", error.message);

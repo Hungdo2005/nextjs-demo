@@ -11,6 +11,9 @@ interface ProductPageProps {
   params: Promise<{ id: string }>;
 }
 
+// Force Next.js to return HTTP 404 for unknown product IDs (prevents soft 404 when loading.tsx is present)
+export const dynamicParams = false;
+
 // Generate static params for all products at build time
 export async function generateStaticParams() {
   return products.map((product) => ({
