@@ -6,6 +6,8 @@ import { products } from "@/data/products";
 import { Header } from "@/components/Header";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { Button } from "@/components/ui/button";
+import { getProductReviews } from "@/lib/reviews";
+import { ReviewsSection } from "@/components/ReviewsSection";
 
 interface ProductPageProps {
   params: Promise<{ id: string }>;
@@ -55,6 +57,9 @@ export default async function ProductDetailPage({ params }: ProductPageProps) {
   if (!product) {
     notFound();
   }
+
+  // Fetch reviews on the server for initial render and SEO
+  const reviewsData = await getProductReviews(product.id);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans relative overflow-x-hidden">
@@ -151,6 +156,12 @@ export default async function ProductDetailPage({ params }: ProductPageProps) {
             </div>
           </div>
         </div>
+
+        {/* Product Reviews & Ratings Section (Lab 6) */}
+        <ReviewsSection
+          productId={product.id}
+          initialReviews={reviewsData.reviews}
+        />
       </main>
     </div>
   );

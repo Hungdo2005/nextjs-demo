@@ -259,6 +259,11 @@ This application delivers 100% adherence to automated test hook standards (`data
 | **Account (`/account`)** | Profile container & user email | `account-page`, `account-email` |
 | **Auth Forms** | Form error and success feedback banners | `error-auth`, `form-success` |
 | **System Boundaries** | Loading indicator & Error retry button | `loading`, `error-boundary`, `btn-retry` |
+| **Reviews Summary** | Rating average, count & empty state | `rating-average`, `review-count`, `reviews-empty` |
+| **Review Item** | Review row, author, rating, comment | `review-item`, `review-author`, `review-rating`, `review-comment` |
+| **Review Form** | Review form, rating select, comment textarea, submit button | `review-form`, `input-rating`, `input-comment`, `btn-submit-review` |
+| **Review Feedback** | Field errors, server error, success banner | `error-rating`, `error-comment`, `error-review`, `review-success` |
+| **Review Auth & Actions** | Login link, edit & delete buttons | `link-login-to-review`, `btn-edit-review`, `btn-delete-review` |
 
 ---
 
