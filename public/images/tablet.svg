@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg-tablet" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="tablet-display" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="50%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#6366f1" />
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#bg-tablet)" rx="16"/>
+  <circle cx="200" cy="200" r="140" fill="#064e3b" opacity="0.4"/>
+
+  <!-- Tablet Body -->
+  <rect x="110" y="85" width="180" height="230" rx="16" fill="#020617" stroke="#64748b" stroke-width="4"/>
+  <rect x="118" y="93" width="164" height="214" rx="10" fill="url(#tablet-display)" opacity="0.85"/>
+  <!-- Waves pattern -->
+  <path d="M 118 190 Q 160 150 200 180 T 282 170 L 282 307 L 118 307 Z" fill="#047857" opacity="0.5"/>
+  
+  <!-- Stylus Pencil leaning -->
+  <rect x="300" y="90" width="10" height="190" rx="4" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5" transform="rotate(8 300 90)"/>
+  <polygon points="325,280 329,292 321,291" fill="#475569" transform="rotate(8 300 90)"/>
+
+  <text x="200" y="350" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#34d399" text-anchor="middle" letter-spacing="2">PRO STYLUS TABLET</text>
+</svg>

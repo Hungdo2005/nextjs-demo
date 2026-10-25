@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg5" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc" />
+      <stop offset="100%" stop-color="#e2e8f0" />
+    </linearGradient>
+    <linearGradient id="micGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#047857" />
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#bg5)" rx="16"/>
+  <circle cx="200" cy="200" r="140" fill="#d1fae5" opacity="0.6"/>
+  <!-- Mic capsule -->
+  <rect x="170" y="90" width="60" height="110" rx="30" fill="url(#micGrad)" stroke="#1e293b" stroke-width="4"/>
+  <!-- Grille lines -->
+  <line x1="175" y1="120" x2="225" y2="120" stroke="#a7f3d0" stroke-width="3"/>
+  <line x1="175" y1="135" x2="225" y2="135" stroke="#a7f3d0" stroke-width="3"/>
+  <line x1="175" y1="150" x2="225" y2="150" stroke="#a7f3d0" stroke-width="3"/>
+  <!-- U-mount -->
+  <path d="M 150 150 A 50 50 0 0 0 250 150" fill="none" stroke="#334155" stroke-width="8" stroke-linecap="round"/>
+  <!-- Stem and stand -->
+  <line x1="200" y1="200" x2="200" y2="270" stroke="#334155" stroke-width="10"/>
+  <ellipse cx="200" cy="275" rx="55" ry="12" fill="#1e293b"/>
+  <text x="200" y="325" font-family="sans-serif" font-size="14" font-weight="bold" fill="#059669" text-anchor="middle">CONDENSER STUDIO MIC</text>
+</svg>
